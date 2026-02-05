@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { UberSelectFieldConfig, QueryParameter, ResponseMapping } from '../types';
+import type { UberSelectFieldConfig, QueryParameter } from '../types';
 
 interface ConfigEditorProps {
   onApply: (config: UberSelectFieldConfig, paramValues: Record<string, string>) => void;
@@ -27,14 +27,7 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
     name: '',
   });
 
-  const [useResponseMapping, setUseResponseMapping] = useState(true);
-  const [responseMapping, setResponseMapping] = useState<ResponseMapping>({
-    optionsPath: 'agentPublicInfos',
-    labelPath: 'firstName',
-    valuePath: 'id',
-    subLabelPath: 'emailAddress',
-    imagePath: 'avatar',
-  });
+  const [resultsPath, setResultsPath] = useState('agentPublicInfos');
 
   const addQueryParam = () => {
     setQueryParams([...queryParams, { name: '', required: false }]);
@@ -89,10 +82,10 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
         url,
         preloadAll,
         queryParameters: queryParams.filter(p => p.name),
-        responseMapping: useResponseMapping ? responseMapping : undefined,
+        resultsPath: resultsPath || undefined,
       },
-      autoCompleteEnabled: true,
       autoComplete: {
+        enabled: true,
         minChars,
         debounceMillis: 300,
       },
@@ -240,76 +233,19 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
         ))}
       </div>
 
-      {/* Response Mapping */}
+      {/* Results Path */}
       <div style={sectionStyle}>
-        <div style={sectionTitleStyle}>Response Mapping</div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '12px' }}>
+        <div style={sectionTitleStyle}>Results Path</div>
+        <div style={{ marginBottom: '12px' }}>
+          <label style={labelStyle}>Path to results array in response</label>
           <input
-            type="checkbox"
-            checked={useResponseMapping}
-            onChange={(e) => setUseResponseMapping(e.target.checked)}
+            type="text"
+            value={resultsPath}
+            onChange={(e) => setResultsPath(e.target.value)}
+            placeholder="e.g. results"
+            style={inputStyle}
           />
-          <span style={{ fontSize: '14px', color: '#4b5563' }}>Enable custom response mapping</span>
-        </label>
-
-        {useResponseMapping && (
-          <div>
-            <div style={{ marginBottom: '12px' }}>
-              <label style={labelStyle}>Options Path</label>
-              <input
-                type="text"
-                value={responseMapping.optionsPath}
-                onChange={(e) => setResponseMapping({ ...responseMapping, optionsPath: e.target.value })}
-                placeholder="e.g. data.items"
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              <div>
-                <label style={labelStyle}>Label Path</label>
-                <input
-                  type="text"
-                  value={responseMapping.labelPath}
-                  onChange={(e) => setResponseMapping({ ...responseMapping, labelPath: e.target.value })}
-                  placeholder="e.g. name"
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Value Path</label>
-                <input
-                  type="text"
-                  value={responseMapping.valuePath}
-                  onChange={(e) => setResponseMapping({ ...responseMapping, valuePath: e.target.value })}
-                  placeholder="e.g. id"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div>
-                <label style={labelStyle}>Sub-label Path</label>
-                <input
-                  type="text"
-                  value={responseMapping.subLabelPath || ''}
-                  onChange={(e) => setResponseMapping({ ...responseMapping, subLabelPath: e.target.value })}
-                  placeholder="e.g. email"
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Image Path</label>
-                <input
-                  type="text"
-                  value={responseMapping.imagePath || ''}
-                  onChange={(e) => setResponseMapping({ ...responseMapping, imagePath: e.target.value })}
-                  placeholder="e.g. avatar"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Apply Button */}

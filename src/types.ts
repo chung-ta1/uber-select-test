@@ -3,6 +3,7 @@ export interface StringOption {
   value: string;
   image?: string;
   subLabel?: string;
+  mappedData?: Record<string, unknown>;
 }
 
 export interface SearchableSelectedOption {
@@ -14,33 +15,43 @@ export interface SearchableSelectedOption {
 
 export type SelectionMode = 'SINGLE' | 'MULTI';
 
-export type SelectionsDisplayMode = 'ABOVE' | 'BELOW';
+export type SelectionsDisplayMode = 'ABOVE' | 'BELOW' | 'WITHIN';
 
 export interface QueryParameter {
   name: string;
   required?: boolean;
 }
 
-export interface ResponseMapping {
-  optionsPath: string;
-  labelPath: string;
-  valuePath: string;
-  subLabelPath?: string;
-  imagePath?: string;
-}
-
 export interface RemoteOptions {
   url: string;
   preloadAll?: boolean;
   queryParameters?: QueryParameter[];
-  responseMapping?: ResponseMapping;
+  resultsPath?: string;
+  fields?: Record<string, string>;
 }
 
+export type AutoCompleteMatchMode = 'STARTS_WITH' | 'CONTAINS' | 'FUZZY';
+
 export interface AutoCompleteConfig {
+  enabled?: boolean;
   minChars?: number;
   debounceMillis?: number;
   noMatchesMessage?: string;
   caseSensitive?: boolean;
+  localMatchMode?: AutoCompleteMatchMode;
+}
+
+export interface ManualEntryFieldDefinition {
+  type: string;
+  label: string;
+  alias: string;
+  required: boolean;
+  placeholder?: string;
+}
+
+export interface ManualEntryConfig {
+  fields: ManualEntryFieldDefinition[];
+  [key: string]: string | ManualEntryFieldDefinition[] | undefined;
 }
 
 export interface UberSelectFieldConfig {
@@ -51,10 +62,12 @@ export interface UberSelectFieldConfig {
   selectionMode?: SelectionMode;
   options?: StringOption[];
   remoteOptions?: RemoteOptions;
-  autoCompleteEnabled?: boolean;
+  manualEntry?: ManualEntryConfig[];
   autoComplete?: AutoCompleteConfig;
   minSelections?: number;
   maxSelections?: number;
   selectionsDisplayMode?: SelectionsDisplayMode;
+  selectionsHeader?: string;
+  showClearButton?: boolean;
   readOnly?: boolean;
 }

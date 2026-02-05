@@ -1,15 +1,19 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Select from 'react-select';
 import type { MultiValue, SingleValue, StylesConfig } from 'react-select';
 import { AsyncPaginate } from 'react-select-async-paginate';
-import type { UberSelectFieldConfig, StringOption, ResponseMapping } from '../types';
+import type { UberSelectFieldConfig, StringOption } from '../types';
 
 interface UberSelectProps {
   config: UberSelectFieldConfig;
   paramValues: Record<string, string>;
+  onParamChange?: (paramValues: Record<string, string>) => void;
+  onLoadOptions?: () => void;
   token?: string;
   value?: StringOption | StringOption[] | null;
   onChange?: (value: StringOption | StringOption[] | null) => void;
+  onManualEntryChange?: (entries: Record<string, unknown>[] | null) => void;
+  initialAnswer?: Array<Record<string, unknown>>;
 }
 
 const customStyles: StylesConfig<StringOption, boolean> = {
@@ -67,24 +71,19 @@ const formatOptionLabel = (option: StringOption) => (
   </div>
 );
 
-
 const resolveJsonPath = (obj: unknown, path: string): unknown => {
-  // Strip leading "$." or "$" prefix
   const normalizedPath = path.startsWith('$.') ? path.slice(2) : path.startsWith('$') ? path.slice(1) : path;
   if (!normalizedPath) return obj;
 
-  // Split into tokens: "field", "[0]", "nested" etc.
   const tokens = normalizedPath.match(/[^.[\]]+|\[\d+]/g);
   if (!tokens) return undefined;
 
   return tokens.reduce((acc: unknown, token) => {
     if (acc == null) return undefined;
-    // Array index: [0], [1], etc.
     const indexMatch = token.match(/^\[(\d+)]$/);
     if (indexMatch) {
       return Array.isArray(acc) ? acc[parseInt(indexMatch[1])] : undefined;
     }
-    // Object field
     if (typeof acc === 'object') {
       return (acc as Record<string, unknown>)[token];
     }
@@ -92,30 +91,127 @@ const resolveJsonPath = (obj: unknown, path: string): unknown => {
   }, obj);
 };
 
-const mapResponse = (data: Record<string, unknown>, mapping?: ResponseMapping): { options: StringOption[], hasMore: boolean } => {
-  if (!mapping) {
-    return {
-      options: (data.options as StringOption[]) || [],
-      hasMore: false,
-    };
+const isExpression = (value: string): boolean => value.includes('${');
+
+const evaluateExpression = (expr: string, data: Record<string, unknown>): string => {
+  return expr.replace(/\$\{(\$[^}]+)\}/g, (_match, jsonPath: string) => {
+    const value = resolveJsonPath(data, jsonPath);
+    return value != null ? String(value) : '';
+  });
+};
+
+const resolveValue = (value: unknown, data: Record<string, unknown>): unknown => {
+  if (typeof value !== 'string') return undefined;
+  if (isExpression(value)) {
+    return evaluateExpression(value, data);
   }
+  return resolveJsonPath(data, value);
+};
 
-  const rawOptions = resolveJsonPath(data, mapping.optionsPath) as Record<string, unknown>[] || [];
+const mapResponseWithResultMapping = (
+  data: Record<string, unknown>,
+  optionsPath: string,
+  fields: Record<string, string>,
+): { options: StringOption[], hasMore: boolean } => {
+  const rawOptions = resolveJsonPath(data, optionsPath) as Record<string, unknown>[] || [];
 
-  const options: StringOption[] = rawOptions.map((item) => ({
-    label: String(resolveJsonPath(item, mapping.labelPath) || ''),
-    value: String(resolveJsonPath(item, mapping.valuePath) || ''),
-    subLabel: mapping.subLabelPath ? String(resolveJsonPath(item, mapping.subLabelPath) || '') : undefined,
-    image: mapping.imagePath ? String(resolveJsonPath(item, mapping.imagePath) || '') : undefined,
-  }));
+  const options: StringOption[] = rawOptions.map((item) => {
+    const mapped: Record<string, unknown> = {};
+
+    Object.entries(fields).forEach(([key, value]) => {
+      const resolved = resolveValue(value, item);
+      if (resolved != null) {
+        mapped[key] = resolved;
+      }
+    });
+
+    const label = mapped.label ? String(mapped.label) : '';
+
+    return {
+      label,
+      value: label,
+      image: mapped.imageUrl ? String(mapped.imageUrl) : undefined,
+      mappedData: mapped,
+    };
+  });
 
   return { options, hasMore: options.length > 0 };
 };
 
-export default function UberSelect({ config, paramValues, token, value, onChange }: UberSelectProps) {
+export default function UberSelect({ config, paramValues, onParamChange, onLoadOptions, token, value, onChange, onManualEntryChange, initialAnswer }: UberSelectProps) {
   const [inputValue, setInputValue] = useState('');
+  const [manualEntriesByGroup, setManualEntriesByGroup] = useState<Record<number, Record<string, string>[]>>(() => {
+    const initial: Record<number, Record<string, string>[]> = {};
+    config.manualEntry?.forEach((_group, idx) => {
+      initial[idx] = [{}];
+    });
+    return initial;
+  });
+  const [initialized, setInitialized] = useState(false);
 
   const isMulti = config.selectionMode === 'MULTI';
+
+  const searchSelectionCount = Array.isArray(value) ? value.length : value ? 1 : 0;
+  const filledManualCount = Object.entries(manualEntriesByGroup).reduce((count, [groupIdx, entries]) => {
+    const group = config.manualEntry?.[Number(groupIdx)];
+    if (!group) return count;
+    return count + entries.filter((entry) => group.fields.some((f) => entry[f.alias]?.trim())).length;
+  }, 0);
+  const totalSelections = searchSelectionCount + filledManualCount;
+
+  useEffect(() => {
+    if (initialized || !initialAnswer || initialAnswer.length === 0) return;
+    setInitialized(true);
+
+    const groups = config.manualEntry || [];
+
+    const findMatchingGroup = (entry: Record<string, unknown>): number => {
+      for (let i = 0; i < groups.length; i++) {
+        const aliases = groups[i].fields.map((f) => f.alias);
+        if (aliases.length > 0 && aliases.every((alias) => alias in entry)) return i;
+      }
+      return -1;
+    };
+
+    const searchEntries: StringOption[] = [];
+    const restoredByGroup: Record<number, Record<string, string>[]> = {};
+
+    for (const entry of initialAnswer) {
+      const groupIdx = findMatchingGroup(entry);
+      if (groupIdx >= 0) {
+        const aliases = groups[groupIdx].fields.map((f) => f.alias);
+        const restored: Record<string, string> = {};
+        for (const alias of aliases) {
+          restored[alias] = entry[alias] != null ? String(entry[alias]) : '';
+        }
+        if (!restoredByGroup[groupIdx]) restoredByGroup[groupIdx] = [];
+        restoredByGroup[groupIdx].push(restored);
+      } else {
+        const label = entry.label ? String(entry.label) : '';
+        searchEntries.push({
+          label,
+          value: label,
+          image: entry.imageUrl ? String(entry.imageUrl) : undefined,
+          mappedData: entry,
+        });
+      }
+    }
+
+    if (searchEntries.length > 0) {
+      onChange?.(isMulti ? searchEntries : searchEntries[0]);
+    }
+
+    if (Object.keys(restoredByGroup).length > 0) {
+      setManualEntriesByGroup((prev) => {
+        const next = { ...prev };
+        for (const [idx, entries] of Object.entries(restoredByGroup)) {
+          next[Number(idx)] = entries;
+        }
+        return next;
+      });
+    }
+  }, [initialAnswer, initialized, config.manualEntry, isMulti, onChange]);
+
   const debounceMs = config.autoComplete?.debounceMillis ?? 250;
   const minChars = config.autoComplete?.minChars ?? 3;
   const noMatchesMessage = config.autoComplete?.noMatchesMessage ?? 'No results';
@@ -126,7 +222,6 @@ export default function UberSelect({ config, paramValues, token, value, onChange
         return { options: [], hasMore: false };
       }
 
-      // Use paramValues['searchText'] if available, otherwise use the typed search
       const effectiveSearch = paramValues['searchText'] || search;
 
       if (effectiveSearch.length < minChars && !config.remoteOptions.preloadAll) {
@@ -138,11 +233,9 @@ export default function UberSelect({ config, paramValues, token, value, onChange
         const remote = config.remoteOptions;
         const url = new URL(remote.url);
 
-        // Set all query parameters from user-entered values
         remote.queryParameters?.forEach((param) => {
           const value = paramValues[param.name];
           if (value) {
-            // Handle page number - increment for pagination
             if (param.name === 'page' || param.name === 'pageNumber' || param.name === 'pageNum') {
               url.searchParams.set(param.name, page.toString());
             } else {
@@ -157,7 +250,13 @@ export default function UberSelect({ config, paramValues, token, value, onChange
         }
         const response = await fetch(url.toString(), { headers });
         const data = await response.json();
-        const mapped = mapResponse(data, remote.responseMapping);
+
+        const optionsPath = remote.resultsPath || 'results';
+        const mapped = mapResponseWithResultMapping(
+          data,
+          optionsPath,
+          remote.fields || {},
+        );
 
         return {
           options: mapped.options,
@@ -193,7 +292,6 @@ export default function UberSelect({ config, paramValues, token, value, onChange
   ) => {
     if (isMulti) {
       const values = newValue as MultiValue<StringOption>;
-      // Don't enforce maxSelections on frontend - let backend validation handle it
       onChange?.(values ? [...values] : []);
     } else {
       onChange?.(newValue as StringOption | null);
@@ -208,6 +306,42 @@ export default function UberSelect({ config, paramValues, token, value, onChange
     if (!value) return isMulti ? [] : null;
     return value;
   };
+
+  useEffect(() => {
+    if (!config.manualEntry || config.manualEntry.length === 0 || !onManualEntryChange) return;
+
+    const resolvedEntries: Record<string, unknown>[] = [];
+
+    for (const [groupIdxStr, entries] of Object.entries(manualEntriesByGroup)) {
+      const group = config.manualEntry[Number(groupIdxStr)];
+      if (!group) continue;
+
+      for (const entry of entries) {
+        const hasAnyValue = group.fields.some((f) => entry[f.alias]?.trim());
+        if (!hasAnyValue) continue;
+
+        const formData: Record<string, unknown> = {};
+        group.fields.forEach((field) => {
+          formData[field.alias] = entry[field.alias] || '';
+        });
+
+        const data: Record<string, unknown> = { ...formData };
+        Object.entries(group).forEach(([key, value]) => {
+          if (key === 'fields') return;
+          if (typeof value === 'string') {
+            const resolved = resolveValue(value, formData);
+            if (resolved != null) {
+              data[key] = resolved;
+            }
+          }
+        });
+
+        resolvedEntries.push(data);
+      }
+    }
+
+    onManualEntryChange(resolvedEntries.length > 0 ? resolvedEntries : null);
+  }, [manualEntriesByGroup, config.manualEntry, onManualEntryChange]);
 
   const renderSelectedAbove = () => {
     if (config.selectionsDisplayMode !== 'ABOVE' || !isMulti) return null;
@@ -317,6 +451,7 @@ export default function UberSelect({ config, paramValues, token, value, onChange
 
       {renderSelectedAbove()}
 
+      {/* Search dropdown */}
       {config.remoteOptions?.url ? (
         <AsyncPaginate
           {...selectProps}
@@ -334,6 +469,165 @@ export default function UberSelect({ config, paramValues, token, value, onChange
         />
       )}
 
+      {/* Query Parameters */}
+      {onParamChange && config.remoteOptions?.queryParameters && (
+        <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          {config.remoteOptions.queryParameters.map((param) => (
+            <div key={param.name} style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#6b7280', marginBottom: '4px' }}>
+                {param.name} {param.required && <span style={{ color: '#ef4444' }}>*</span>}
+              </label>
+              <input
+                type="text"
+                value={paramValues[param.name] || ''}
+                onChange={(e) => onParamChange({ ...paramValues, [param.name]: e.target.value })}
+                placeholder={`Enter ${param.name}`}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={onLoadOptions}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Load Options
+          </button>
+        </div>
+      )}
+
+      {/* Manual entry section */}
+      {config.manualEntry && config.manualEntry.length > 0 && (
+        <>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            margin: '16px 0',
+            color: '#9ca3af',
+            fontSize: '13px',
+          }}>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
+            <span>or enter manually</span>
+            <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
+          </div>
+
+          {config.manualEntry.map((group, groupIndex) => {
+            const groupEntries = manualEntriesByGroup[groupIndex] || [{}];
+            return (
+              <div key={groupIndex} style={{ marginBottom: '16px' }}>
+                {config.manualEntry!.length > 1 && (
+                  <div style={{ fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
+                    {group.fields.map((f) => f.label).join(' + ')}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {groupEntries.map((entry, entryIndex) => (
+                    <div key={entryIndex} style={{ border: '1px solid #d1d5db', borderRadius: '8px', padding: '16px', backgroundColor: 'white', position: 'relative' }}>
+                      {groupEntries.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setManualEntriesByGroup((prev) => ({
+                            ...prev,
+                            [groupIndex]: prev[groupIndex].filter((_, i) => i !== entryIndex),
+                          }))}
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            background: 'none',
+                            border: 'none',
+                            color: '#9ca3af',
+                            cursor: 'pointer',
+                            fontSize: '18px',
+                            lineHeight: 1,
+                            padding: '4px',
+                          }}
+                          title="Remove entry"
+                        >
+                          x
+                        </button>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {group.fields.map((field) => (
+                          <div key={field.alias}>
+                            <label style={{ display: 'block', fontSize: '13px', color: '#6b7280', marginBottom: '4px' }}>
+                              {field.label}
+                              {field.required && <span style={{ color: '#ef4444', marginLeft: '2px' }}>*</span>}
+                            </label>
+                            <input
+                              type={field.type === 'EMAIL' ? 'email' : 'text'}
+                              value={entry[field.alias] || ''}
+                              onChange={(e) =>
+                                setManualEntriesByGroup((prev) => ({
+                                  ...prev,
+                                  [groupIndex]: (prev[groupIndex] || [{}]).map((ent, i) =>
+                                    i === entryIndex ? { ...ent, [field.alias]: e.target.value } : ent
+                                  ),
+                                }))
+                              }
+                              placeholder={field.placeholder || ''}
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {(!config.maxSelections || totalSelections < config.maxSelections) && (
+                    <button
+                      type="button"
+                      onClick={() => setManualEntriesByGroup((prev) => ({
+                        ...prev,
+                        [groupIndex]: [...(prev[groupIndex] || []), {}],
+                      }))}
+                      style={{
+                        padding: '10px',
+                        backgroundColor: 'white',
+                        color: '#2563eb',
+                        border: '1px dashed #93c5fd',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      + Add another entry
+                    </button>
+                  )}
+
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
       {renderSelectedBelow()}
 
       {config.minSelections && isMulti && (
@@ -346,7 +640,6 @@ export default function UberSelect({ config, paramValues, token, value, onChange
           Maximum {config.maxSelections} selection(s) allowed
         </p>
       )}
-
     </div>
   );
 }
