@@ -9,7 +9,7 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
   const [url, setUrl] = useState('https://yenta.team1realbrokerage.com/api/v1/public/agents-public-info');
   const [minChars, setMinChars] = useState(0);
   const [preloadAll, setPreloadAll] = useState(true);
-  const [selectionMode, setSelectionMode] = useState<'SINGLE' | 'MULTI'>('SINGLE');
+  const [maxSelections, setMaxSelections] = useState<number | undefined>(1);
 
   // Query parameter definitions (metadata)
   const [queryParams, setQueryParams] = useState<QueryParameter[]>([
@@ -27,7 +27,7 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
     name: '',
   });
 
-  const [resultsPath, setResultsPath] = useState('agentPublicInfos');
+  const [resultsJsonPath, setResultsJsonPath] = useState('agentPublicInfos');
 
   const addQueryParam = () => {
     setQueryParams([...queryParams, { name: '', required: false }]);
@@ -76,18 +76,18 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
 
     const config: UberSelectFieldConfig = {
       label: 'Dynamic Config Test',
-      selectionMode,
+      maxSelections,
       placeholder: 'Search...',
       remoteOptions: {
         url,
         preloadAll,
         queryParameters: queryParams.filter(p => p.name),
-        resultsPath: resultsPath || undefined,
+        resultsJsonPath: resultsJsonPath || undefined,
       },
-      autoComplete: {
+      searchConfig: {
         enabled: true,
-        minChars,
-        debounceMillis: 300,
+        minInputLength: minChars,
+        debounceDelayMs: 300,
       },
       showClearButton: true,
     };
@@ -140,15 +140,14 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
           <div>
-            <label style={labelStyle}>Selection Mode</label>
-            <select
-              value={selectionMode}
-              onChange={(e) => setSelectionMode(e.target.value as 'SINGLE' | 'MULTI')}
+            <label style={labelStyle}>Max Selections</label>
+            <input
+              type="number"
+              min="1"
+              value={maxSelections ?? ''}
+              onChange={(e) => setMaxSelections(e.target.value ? parseInt(e.target.value) : undefined)}
               style={inputStyle}
-            >
-              <option value="SINGLE">Single</option>
-              <option value="MULTI">Multi</option>
-            </select>
+            />
           </div>
           <div>
             <label style={labelStyle}>Min Chars</label>
@@ -240,8 +239,8 @@ export default function ConfigEditor({ onApply }: ConfigEditorProps) {
           <label style={labelStyle}>Path to results array in response</label>
           <input
             type="text"
-            value={resultsPath}
-            onChange={(e) => setResultsPath(e.target.value)}
+            value={resultsJsonPath}
+            onChange={(e) => setResultsJsonPath(e.target.value)}
             placeholder="e.g. results"
             style={inputStyle}
           />

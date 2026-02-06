@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import Select from 'react-select';
 import type { MultiValue, SingleValue, StylesConfig } from 'react-select';
 import { AsyncPaginate } from 'react-select-async-paginate';
-import type { UberSelectFieldConfig, StringOption } from '../types';
+import type { UberSelectFieldConfig, StringOption, ResultMapping } from '../types';
 
 interface UberSelectProps {
   config: UberSelectFieldConfig;
@@ -111,26 +111,33 @@ const resolveValue = (value: unknown, data: Record<string, unknown>): unknown =>
 const mapResponseWithResultMapping = (
   data: Record<string, unknown>,
   optionsPath: string,
-  fields: Record<string, string>,
+  resultMapping: ResultMapping,
+  answerMapping?: Record<string, string>,
 ): { options: StringOption[], hasMore: boolean } => {
   const rawOptions = resolveJsonPath(data, optionsPath) as Record<string, unknown>[] || [];
 
   const options: StringOption[] = rawOptions.map((item) => {
+    const label = resultMapping.labelExpression
+      ? String(resolveValue(resultMapping.labelExpression, item) ?? '')
+      : '';
+
+    const imageUrl = resultMapping.imageUrlJsonPath
+      ? String(resolveJsonPath(item, resultMapping.imageUrlJsonPath) ?? '')
+      : undefined;
+
     const mapped: Record<string, unknown> = {};
 
-    Object.entries(fields).forEach(([key, value]) => {
-      const resolved = resolveValue(value, item);
-      if (resolved != null) {
-        mapped[key] = resolved;
-      }
-    });
-
-    const label = mapped.label ? String(mapped.label) : '';
+    if (answerMapping) {
+      Object.entries(answerMapping).forEach(([key, path]) => {
+        const resolved = resolveValue(path, item);
+        if (resolved != null) mapped[key] = resolved;
+      });
+    }
 
     return {
       label,
       value: label,
-      image: mapped.imageUrl ? String(mapped.imageUrl) : undefined,
+      image: imageUrl || undefined,
       mappedData: mapped,
     };
   });
@@ -140,52 +147,40 @@ const mapResponseWithResultMapping = (
 
 export default function UberSelect({ config, paramValues, onParamChange, onLoadOptions, token, value, onChange, onManualEntryChange, initialAnswer }: UberSelectProps) {
   const [inputValue, setInputValue] = useState('');
-  const [manualEntriesByGroup, setManualEntriesByGroup] = useState<Record<number, Record<string, string>[]>>(() => {
-    const initial: Record<number, Record<string, string>[]> = {};
-    config.manualEntry?.forEach((_group, idx) => {
-      initial[idx] = [{}];
-    });
-    return initial;
+  const [manualEntries, setManualEntries] = useState<Record<string, string>[]>(() => {
+    return config.manualEntryConfig ? [{}] : [];
   });
   const [initialized, setInitialized] = useState(false);
 
-  const isMulti = config.selectionMode === 'MULTI';
+  const isMulti = config.maxSelections !== 1;
 
   const searchSelectionCount = Array.isArray(value) ? value.length : value ? 1 : 0;
-  const filledManualCount = Object.entries(manualEntriesByGroup).reduce((count, [groupIdx, entries]) => {
-    const group = config.manualEntry?.[Number(groupIdx)];
-    if (!group) return count;
-    return count + entries.filter((entry) => group.fields.some((f) => entry[f.alias]?.trim())).length;
-  }, 0);
+  const filledManualCount = config.manualEntryConfig?.subformConfig
+    ? manualEntries.filter((entry) => config.manualEntryConfig!.subformConfig!.fields.some((f) => entry[f.alias]?.trim())).length
+    : 0;
   const totalSelections = searchSelectionCount + filledManualCount;
 
   useEffect(() => {
     if (initialized || !initialAnswer || initialAnswer.length === 0) return;
     setInitialized(true);
 
-    const groups = config.manualEntry || [];
+    const subform = config.manualEntryConfig?.subformConfig;
+    const aliases = subform ? subform.fields.map((f) => f.alias) : [];
 
-    const findMatchingGroup = (entry: Record<string, unknown>): number => {
-      for (let i = 0; i < groups.length; i++) {
-        const aliases = groups[i].fields.map((f) => f.alias);
-        if (aliases.length > 0 && aliases.every((alias) => alias in entry)) return i;
-      }
-      return -1;
+    const isManualEntry = (entry: Record<string, unknown>): boolean => {
+      return aliases.length > 0 && aliases.every((alias) => alias in entry);
     };
 
     const searchEntries: StringOption[] = [];
-    const restoredByGroup: Record<number, Record<string, string>[]> = {};
+    const restoredEntries: Record<string, string>[] = [];
 
     for (const entry of initialAnswer) {
-      const groupIdx = findMatchingGroup(entry);
-      if (groupIdx >= 0) {
-        const aliases = groups[groupIdx].fields.map((f) => f.alias);
+      if (isManualEntry(entry)) {
         const restored: Record<string, string> = {};
         for (const alias of aliases) {
           restored[alias] = entry[alias] != null ? String(entry[alias]) : '';
         }
-        if (!restoredByGroup[groupIdx]) restoredByGroup[groupIdx] = [];
-        restoredByGroup[groupIdx].push(restored);
+        restoredEntries.push(restored);
       } else {
         const label = entry.label ? String(entry.label) : '';
         searchEntries.push({
@@ -201,20 +196,14 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
       onChange?.(isMulti ? searchEntries : searchEntries[0]);
     }
 
-    if (Object.keys(restoredByGroup).length > 0) {
-      setManualEntriesByGroup((prev) => {
-        const next = { ...prev };
-        for (const [idx, entries] of Object.entries(restoredByGroup)) {
-          next[Number(idx)] = entries;
-        }
-        return next;
-      });
+    if (restoredEntries.length > 0) {
+      setManualEntries(restoredEntries);
     }
-  }, [initialAnswer, initialized, config.manualEntry, isMulti, onChange]);
+  }, [initialAnswer, initialized, config.manualEntryConfig, isMulti, onChange]);
 
-  const debounceMs = config.autoComplete?.debounceMillis ?? 250;
-  const minChars = config.autoComplete?.minChars ?? 3;
-  const noMatchesMessage = config.autoComplete?.noMatchesMessage ?? 'No results';
+  const debounceMs = config.searchConfig?.debounceDelayMs ?? 250;
+  const minChars = config.searchConfig?.minInputLength ?? 3;
+  const noMatchesMessage = config.dropdownDisplay?.noResultsMessage ?? 'No results found';
 
   const loadOptions = useCallback(
     async (search: string, _loadedOptions: unknown, additional?: { page: number }) => {
@@ -251,11 +240,12 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
         const response = await fetch(url.toString(), { headers });
         const data = await response.json();
 
-        const optionsPath = remote.resultsPath || 'results';
+        const optionsPath = remote.resultsJsonPath || 'results';
         const mapped = mapResponseWithResultMapping(
           data,
           optionsPath,
-          remote.fields || {},
+          config.resultMapping || {},
+          config.answerMapping,
         );
 
         return {
@@ -268,23 +258,17 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
         return { options: [], hasMore: false };
       }
     },
-    [config.remoteOptions, minChars, paramValues, token]
+    [config.remoteOptions, config.resultMapping, config.answerMapping, minChars, paramValues, token]
   );
 
   const filterStaticOptions = useCallback(
     (option: { data: StringOption }, inputValue: string) => {
       if (!inputValue) return true;
-
-      const searchTerm = config.autoComplete?.caseSensitive
-        ? inputValue
-        : inputValue.toLowerCase();
-      const label = config.autoComplete?.caseSensitive
-        ? option.data.label
-        : option.data.label.toLowerCase();
-
+      const searchTerm = inputValue.toLowerCase();
+      const label = option.data.label.toLowerCase();
       return label.includes(searchTerm);
     },
-    [config.autoComplete]
+    []
   );
 
   const handleChange = (
@@ -308,43 +292,38 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
   };
 
   useEffect(() => {
-    if (!config.manualEntry || config.manualEntry.length === 0 || !onManualEntryChange) return;
+    if (!config.manualEntryConfig || !onManualEntryChange) return;
+
+    const subform = config.manualEntryConfig.subformConfig;
+    if (!subform) return;
 
     const resolvedEntries: Record<string, unknown>[] = [];
 
-    for (const [groupIdxStr, entries] of Object.entries(manualEntriesByGroup)) {
-      const group = config.manualEntry[Number(groupIdxStr)];
-      if (!group) continue;
+    for (const entry of manualEntries) {
+      const hasAnyValue = subform.fields.some((f) => entry[f.alias]?.trim());
+      if (!hasAnyValue) continue;
 
-      for (const entry of entries) {
-        const hasAnyValue = group.fields.some((f) => entry[f.alias]?.trim());
-        if (!hasAnyValue) continue;
+      const formData: Record<string, unknown> = {};
+      subform.fields.forEach((field) => {
+        formData[field.alias] = entry[field.alias] || '';
+      });
 
-        const formData: Record<string, unknown> = {};
-        group.fields.forEach((field) => {
-          formData[field.alias] = entry[field.alias] || '';
-        });
-
-        const data: Record<string, unknown> = { ...formData };
-        Object.entries(group).forEach(([key, value]) => {
-          if (key === 'fields') return;
-          if (typeof value === 'string') {
-            const resolved = resolveValue(value, formData);
-            if (resolved != null) {
-              data[key] = resolved;
-            }
-          }
-        });
-
-        resolvedEntries.push(data);
+      const data: Record<string, unknown> = { ...formData };
+      if (subform.labelExpression) {
+        const label = resolveValue(subform.labelExpression, formData);
+        if (label != null) {
+          data.label = label;
+        }
       }
+
+      resolvedEntries.push(data);
     }
 
     onManualEntryChange(resolvedEntries.length > 0 ? resolvedEntries : null);
-  }, [manualEntriesByGroup, config.manualEntry, onManualEntryChange]);
+  }, [manualEntries, config.manualEntryConfig, onManualEntryChange]);
 
   const renderSelectedAbove = () => {
-    if (config.selectionsDisplayMode !== 'ABOVE' || !isMulti) return null;
+    if (config.selectionsDisplay?.position !== 'ABOVE' || !isMulti) return null;
     const values = (value as StringOption[]) || [];
     if (values.length === 0) return null;
 
@@ -374,7 +353,7 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
                 }}
                 style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}
               >
-                ×
+                x
               </button>
             </span>
           ))}
@@ -384,7 +363,7 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
   };
 
   const renderSelectedBelow = () => {
-    if (config.selectionsDisplayMode !== 'BELOW' || !isMulti) return null;
+    if (config.selectionsDisplay?.position !== 'BELOW' || !isMulti) return null;
     const values = (value as StringOption[]) || [];
     if (values.length === 0) return null;
 
@@ -414,7 +393,7 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
                 }}
                 style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: '0' }}
               >
-                ×
+                x
               </button>
             </span>
           ))}
@@ -435,7 +414,7 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
     styles: customStyles,
     formatOptionLabel,
     noOptionsMessage: () => noMatchesMessage,
-    controlShouldRenderValue: !isMulti || !config.selectionsDisplayMode,
+    controlShouldRenderValue: !isMulti || !config.selectionsDisplay?.position,
   };
 
   return (
@@ -514,7 +493,7 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
       )}
 
       {/* Manual entry section */}
-      {config.manualEntry && config.manualEntry.length > 0 && (
+      {config.manualEntryConfig?.subformConfig != null && (
         <>
           <div style={{
             display: 'flex',
@@ -525,106 +504,88 @@ export default function UberSelect({ config, paramValues, onParamChange, onLoadO
             fontSize: '13px',
           }}>
             <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
-            <span>or enter manually</span>
+            <span>{config.manualEntryConfig?.triggerText || 'or enter manually'}</span>
             <div style={{ flex: 1, height: '1px', backgroundColor: '#e5e7eb' }} />
           </div>
 
-          {config.manualEntry.map((group, groupIndex) => {
-            const groupEntries = manualEntriesByGroup[groupIndex] || [{}];
-            return (
-              <div key={groupIndex} style={{ marginBottom: '16px' }}>
-                {config.manualEntry!.length > 1 && (
-                  <div style={{ fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
-                    {group.fields.map((f) => f.label).join(' + ')}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {groupEntries.map((entry, entryIndex) => (
-                    <div key={entryIndex} style={{ border: '1px solid #d1d5db', borderRadius: '8px', padding: '16px', backgroundColor: 'white', position: 'relative' }}>
-                      {groupEntries.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setManualEntriesByGroup((prev) => ({
-                            ...prev,
-                            [groupIndex]: prev[groupIndex].filter((_, i) => i !== entryIndex),
-                          }))}
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            background: 'none',
-                            border: 'none',
-                            color: '#9ca3af',
-                            cursor: 'pointer',
-                            fontSize: '18px',
-                            lineHeight: 1,
-                            padding: '4px',
-                          }}
-                          title="Remove entry"
-                        >
-                          x
-                        </button>
-                      )}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {group.fields.map((field) => (
-                          <div key={field.alias}>
-                            <label style={{ display: 'block', fontSize: '13px', color: '#6b7280', marginBottom: '4px' }}>
-                              {field.label}
-                              {field.required && <span style={{ color: '#ef4444', marginLeft: '2px' }}>*</span>}
-                            </label>
-                            <input
-                              type={field.type === 'EMAIL' ? 'email' : 'text'}
-                              value={entry[field.alias] || ''}
-                              onChange={(e) =>
-                                setManualEntriesByGroup((prev) => ({
-                                  ...prev,
-                                  [groupIndex]: (prev[groupIndex] || [{}]).map((ent, i) =>
-                                    i === entryIndex ? { ...ent, [field.alias]: e.target.value } : ent
-                                  ),
-                                }))
-                              }
-                              placeholder={field.placeholder || ''}
-                              style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '6px',
-                                fontSize: '14px',
-                                boxSizing: 'border-box',
-                              }}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-
-                  {(!config.maxSelections || totalSelections < config.maxSelections) && (
+          <div style={{ marginBottom: '16px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {manualEntries.map((entry, entryIndex) => (
+                <div key={entryIndex} style={{ border: '1px solid #d1d5db', borderRadius: '8px', padding: '16px', backgroundColor: 'white', position: 'relative' }}>
+                  {manualEntries.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => setManualEntriesByGroup((prev) => ({
-                        ...prev,
-                        [groupIndex]: [...(prev[groupIndex] || []), {}],
-                      }))}
+                      onClick={() => setManualEntries((prev) => prev.filter((_, i) => i !== entryIndex))}
                       style={{
-                        padding: '10px',
-                        backgroundColor: 'white',
-                        color: '#2563eb',
-                        border: '1px dashed #93c5fd',
-                        borderRadius: '8px',
-                        fontSize: '14px',
+                        position: 'absolute',
+                        top: '8px',
+                        right: '8px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#9ca3af',
                         cursor: 'pointer',
+                        fontSize: '18px',
+                        lineHeight: 1,
+                        padding: '4px',
                       }}
+                      title="Remove entry"
                     >
-                      + Add another entry
+                      x
                     </button>
                   )}
-
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {config.manualEntryConfig!.subformConfig!.fields.map((field) => (
+                      <div key={field.alias}>
+                        <label style={{ display: 'block', fontSize: '13px', color: '#6b7280', marginBottom: '4px' }}>
+                          {field.label}
+                          {field.required && <span style={{ color: '#ef4444', marginLeft: '2px' }}>*</span>}
+                        </label>
+                        <input
+                          type={field.type === 'EMAIL' ? 'email' : 'text'}
+                          value={entry[field.alias] || ''}
+                          onChange={(e) =>
+                            setManualEntries((prev) =>
+                              prev.map((ent, i) =>
+                                i === entryIndex ? { ...ent, [field.alias]: e.target.value } : ent
+                              )
+                            )
+                          }
+                          placeholder={field.placeholder || ''}
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              ))}
+
+              {(!config.maxSelections || totalSelections < config.maxSelections) && (
+                <button
+                  type="button"
+                  onClick={() => setManualEntries((prev) => [...prev, {}])}
+                  style={{
+                    padding: '10px',
+                    backgroundColor: 'white',
+                    color: '#2563eb',
+                    border: '1px dashed #93c5fd',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  + Add another entry
+                </button>
+              )}
+
+            </div>
+          </div>
         </>
       )}
 

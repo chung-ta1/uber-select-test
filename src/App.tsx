@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import UberSelect from './components/UberSelect';
-import type { UberSelectFieldConfig, StringOption, SelectionsDisplayMode, AutoCompleteConfig, AutoCompleteMatchMode, ManualEntryConfig } from './types';
+import type { UberSelectFieldConfig, StringOption, SelectionsDisplayPosition, SearchConfig, SelectionsDisplay, DropdownDisplay, ManualEntryConfig } from './types';
 
 const DEFAULT_TOKEN = 'd3aae14db6170a270c8ca080163bc1e88b0ff9dd904f9032eab12e2445c2e87b754c807d7fc92723d52a5ffa95c8f7d3bffc1179a331f6d250963d21767678806cc07ceb1b81eac7d38436f136b44d735d48120ab2f0db9730c70cb66ea755006bd4e48d1071b86d4da8b0da5a792c4f8b92a6096f4b9963f0876ef58fc365535f619696d431f01885805f48d71977adeb2b9a948200eb7ce1d964354290f3f7dad311e6dc672358cd7a12ae70bc7dc04e1190615777e041bd6dbfa9e147ceeda482f9e6c22a32090ee41d534afc71192e23dc864646712c6cd748df0f16bfa36940fbdb5debde3d853c395f4bb99e1776382a03f0ef51c0d4623bc736477c4ffef66798b01cc5ed0739eb36c0452b3c446f992cd0a7ac3ed9ed98e0ba8c89300e2ef46386c47a6fc2df47e229f78ddfebe4bd9bdf7b68b54026f30f71cc2512fc41a0168aff57fb9cf0f43e0d7f451b97638d61aa273d8f90836e966c0d88c7fb2b7bdee385cd0c93e0385ac3e7c59db029750e66c63811009ec0ca3d6b24bb6fe2b284d6b353fa56a0e13c24ab1d77dfebc8e39e7d2b4e845229fe9c9dc47842f5d739a208edf5a90e58b596851d56018f2e6f753827661e0ab3a87b51a73ff26a2d2310a6fb60291f9f171a90593f92f0416ca34537b10fad291d1f0cd5c69da7e2326574cb28124b0788e313b688d7006dc650576397a2a958483b624db09ac449f8b2a7c39202c46bbbb32feb041eb4ebfe76a7134962f1ccd830b6af10baf3ff702938b7c3b089adb48851832a959d8f7266a0fbb7e108aab23b308397d5f62be1c2c59ed85792d77ccd365ad3675e23493963aba355ceeae7ef18eb6fe38a3aecae6eae7e236321866f7f2b0767d6646a521a712bfec2511a276005a72c437952b6861dc46234df00c92a78418d306a86a8e52f475c7bb602ca65c1e2945d867a55a742aa28cd790ce7b40aa3a61008b0ae9c1aa2bb424d828ee894f47650601eb45847497ab12661cc6485158a28b1a1735c058cd82fd8100fb578af5fe69e5d8c1002074d835c2b57cf829f002af5dd9196770a0faeac81437c83a4eafa2c7209858633131edff8baaa71631c24f359f3f749828de34dc893c510492583da6e080b944af53d6512c03371d1ea200068935e3ce5454f89d459c787a6f34a2bbb77cff97ca6e410a9b2bc2848a4e082b08a61eaeb1e19c4135c70b2286a8b0e6e9413e464c4f003cee83c0236f0d8583236b8fb72a7b4c394c49e1dc15ac501dffb4e9c5efe9592bf108826b1552c586fcc11469338f83c8ee0bbc760d49edd0600fff648a7e1b5c27d6deba81dda0855b3ea78c354438899967c74cb81ae51d586eff0e8e427083fdb0e2e82306456226ebae0dc064c6d51836f2d297729ecc23fe8785e2383a2ba74865082aadf73fe44ed521714b32645cfa156dd057cd3b8f211494444a52d59e2505b8bd6a98df2bedd5409d4b8c6bf016014857a6fc4e0b09790c263196ae245deafbb588d58e9b72f4f7a8e8233312f3b8846ed6f5e9ddd20acbd341ae125847e0758a78b0c728eb0c728acd45f217b0577740c9c0f52ae8b582d721dcd8e556b8a0908b8e6072b0e3a7fadbd5797aa022d780dcde29b0ee15a85e2a7f64d6329234ae72c8c7cc772f13d5a724543f5874a38460beac6f72339e8992417634b475f10e3c00b595acb3e5d73935561a4a19ea2ef02fe7273f257e0dc7cd525a8ad37c4bf3bed1557b58f86ebae203c6a82b5d1fa77cbe571850e530d1981b4396d7d81474533cd753afead4c79b7af9b493d31cf01e8e3a4906d8220bacc70a423d95eec813b942e462b031bc21d5f6b5e883cb513a518897a78c68e539a778483c0a5edd3ceabff94f78019ac3f5ca509bbecc16220c09e1c99b6c459f871e23df8271e23dc3d4e3b75b7abef7478bd3ed0932e0807eac75deb85a0058b4787224255a1074330f5963a387a45e21c373a048c';
 
@@ -45,32 +45,37 @@ interface Field {
   type: string;
   label: string;
   required?: boolean;
-  selectionMode?: 'SINGLE' | 'MULTI';
   placeholder?: string;
   subtitle?: string;
   remoteOptions?: {
     url: string;
     preloadAll?: boolean;
     queryParameters?: { name: string; required?: boolean }[];
-    resultsPath?: string;
-    fields?: Record<string, string>;
+    resultsJsonPath?: string;
   };
-  manualEntry?: ManualEntryConfig | ManualEntryConfig[];
+  resultMapping?: {
+    labelExpression?: string;
+    imageUrlJsonPath?: string;
+  };
+  answerMapping?: Record<string, string>;
+  searchConfig?: {
+    enabled?: boolean;
+    minInputLength?: number;
+    debounceDelayMs?: number;
+  };
+  selectionsDisplay?: {
+    position?: 'ABOVE' | 'WITHIN' | 'BELOW';
+  };
+  dropdownDisplay?: {
+    noResultsMessage?: string;
+  };
+  manualEntryConfig?: ManualEntryConfig;
   options?: { label: string; value: string | boolean }[];
   trueOption?: BinaryOption;
   falseOption?: BinaryOption;
   minSelections?: number;
   maxSelections?: number;
-  autoComplete?: {
-    enabled?: boolean;
-    minChars?: number;
-    debounceMillis?: number;
-    noMatchesMessage?: string;
-    localMatchMode?: AutoCompleteMatchMode;
-    caseSensitive?: boolean;
-  };
   showClearButton?: boolean;
-  selectionsDisplayMode?: 'ABOVE' | 'WITHIN' | 'BELOW';
   selectionsHeader?: string;
   answer?: unknown;
   condition?: FieldCondition;
@@ -238,33 +243,30 @@ export default function App() {
   };
 
   const convertToUberSelectConfig = (field: Field): UberSelectFieldConfig => {
-    const manualEntry = field.manualEntry
-      ? Array.isArray(field.manualEntry) ? field.manualEntry : [field.manualEntry]
-      : undefined;
-
     return {
       label: field.label,
       required: field.required,
-      selectionMode: field.selectionMode,
       placeholder: field.placeholder,
       subtitle: field.subtitle,
       remoteOptions: field.remoteOptions ? {
         url: field.remoteOptions.url,
         preloadAll: field.remoteOptions.preloadAll,
         queryParameters: field.remoteOptions.queryParameters,
-        resultsPath: field.remoteOptions.resultsPath,
-        fields: field.remoteOptions.fields,
+        resultsJsonPath: field.remoteOptions.resultsJsonPath,
       } : undefined,
-      manualEntry,
+      resultMapping: field.resultMapping,
+      answerMapping: field.answerMapping,
+      manualEntryConfig: field.manualEntryConfig,
       options: field.options as StringOption[],
       minSelections: field.minSelections,
       maxSelections: field.maxSelections,
-      autoComplete: {
-        ...field.autoComplete,
-        enabled: field.autoComplete?.enabled !== false,
-      },
+      searchConfig: field.searchConfig ? {
+        ...field.searchConfig,
+        enabled: field.searchConfig.enabled !== false,
+      } : { enabled: true },
       showClearButton: field.showClearButton || false,
-      selectionsDisplayMode: field.selectionsDisplayMode,
+      selectionsDisplay: field.selectionsDisplay,
+      dropdownDisplay: field.dropdownDisplay,
       selectionsHeader: field.selectionsHeader,
     };
   };
@@ -286,11 +288,29 @@ export default function App() {
     }
   };
 
-  const updateAutoComplete = (updates: Partial<AutoCompleteConfig>) => {
+  const updateSearchConfig = (updates: Partial<SearchConfig>) => {
     if (uberSelectConfig) {
       setUberSelectConfig({
         ...uberSelectConfig,
-        autoComplete: { ...uberSelectConfig.autoComplete, ...updates },
+        searchConfig: { ...uberSelectConfig.searchConfig, ...updates },
+      });
+    }
+  };
+
+  const updateSelectionsDisplay = (updates: Partial<SelectionsDisplay>) => {
+    if (uberSelectConfig) {
+      setUberSelectConfig({
+        ...uberSelectConfig,
+        selectionsDisplay: { ...uberSelectConfig.selectionsDisplay, ...updates },
+      });
+    }
+  };
+
+  const updateDropdownDisplay = (updates: Partial<DropdownDisplay>) => {
+    if (uberSelectConfig) {
+      setUberSelectConfig({
+        ...uberSelectConfig,
+        dropdownDisplay: { ...uberSelectConfig.dropdownDisplay, ...updates },
       });
     }
   };
@@ -599,10 +619,10 @@ export default function App() {
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
                           <input
                             type="checkbox"
-                            checked={uberSelectConfig.autoComplete?.enabled !== false}
-                            onChange={(e) => updateAutoComplete({ enabled: e.target.checked })}
+                            checked={uberSelectConfig.searchConfig?.enabled !== false}
+                            onChange={(e) => updateSearchConfig({ enabled: e.target.checked })}
                           />
-                          Autocomplete Enabled
+                          Search Enabled
                         </label>
                       </div>
                     </div>
@@ -610,18 +630,6 @@ export default function App() {
                     {/* Selection Settings */}
                     <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>Selection Settings</div>
-
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={labelStyle}>Selection Mode</label>
-                        <select
-                          value={uberSelectConfig.selectionMode || 'MULTI'}
-                          onChange={(e) => updateConfig({ selectionMode: e.target.value as 'SINGLE' | 'MULTI' })}
-                          style={inputStyle}
-                        >
-                          <option value="SINGLE">SINGLE</option>
-                          <option value="MULTI">MULTI</option>
-                        </select>
-                      </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                         <div>
@@ -648,10 +656,10 @@ export default function App() {
                       </div>
 
                       <div style={{ marginBottom: '12px' }}>
-                        <label style={labelStyle}>Selections Display Mode</label>
+                        <label style={labelStyle}>Selections Display Position</label>
                         <select
-                          value={uberSelectConfig.selectionsDisplayMode || 'BELOW'}
-                          onChange={(e) => updateConfig({ selectionsDisplayMode: e.target.value as SelectionsDisplayMode })}
+                          value={uberSelectConfig.selectionsDisplay?.position || 'BELOW'}
+                          onChange={(e) => updateSelectionsDisplay({ position: e.target.value as SelectionsDisplayPosition })}
                           style={inputStyle}
                         >
                           <option value="ABOVE">ABOVE</option>
@@ -671,65 +679,43 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Autocomplete Config */}
+                    {/* Search Config */}
                     <div style={{ marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #e5e7eb' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>Autocomplete Config</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>Search Config</div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                         <div>
-                          <label style={labelStyle}>Min Chars</label>
+                          <label style={labelStyle}>Min Input Length</label>
                           <input
                             type="number"
                             min="0"
-                            value={uberSelectConfig.autoComplete?.minChars ?? ''}
-                            onChange={(e) => updateAutoComplete({ minChars: e.target.value ? parseInt(e.target.value) : undefined })}
+                            value={uberSelectConfig.searchConfig?.minInputLength ?? ''}
+                            onChange={(e) => updateSearchConfig({ minInputLength: e.target.value ? parseInt(e.target.value) : undefined })}
                             style={inputStyle}
                           />
                         </div>
 
                         <div>
-                          <label style={labelStyle}>Debounce (ms)</label>
+                          <label style={labelStyle}>Debounce Delay (ms)</label>
                           <input
                             type="number"
                             min="0"
-                            value={uberSelectConfig.autoComplete?.debounceMillis ?? ''}
-                            onChange={(e) => updateAutoComplete({ debounceMillis: e.target.value ? parseInt(e.target.value) : undefined })}
+                            value={uberSelectConfig.searchConfig?.debounceDelayMs ?? ''}
+                            onChange={(e) => updateSearchConfig({ debounceDelayMs: e.target.value ? parseInt(e.target.value) : undefined })}
                             style={inputStyle}
                           />
                         </div>
                       </div>
 
                       <div style={{ marginBottom: '12px' }}>
-                        <label style={labelStyle}>No Matches Message</label>
+                        <label style={labelStyle}>No Results Message</label>
                         <input
                           type="text"
-                          value={uberSelectConfig.autoComplete?.noMatchesMessage || ''}
-                          onChange={(e) => updateAutoComplete({ noMatchesMessage: e.target.value || undefined })}
+                          value={uberSelectConfig.dropdownDisplay?.noResultsMessage || ''}
+                          onChange={(e) => updateDropdownDisplay({ noResultsMessage: e.target.value || undefined })}
                           style={inputStyle}
                         />
                       </div>
-
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={labelStyle}>Local Match Mode</label>
-                        <select
-                          value={uberSelectConfig.autoComplete?.localMatchMode || 'CONTAINS'}
-                          onChange={(e) => updateAutoComplete({ localMatchMode: e.target.value as AutoCompleteMatchMode })}
-                          style={inputStyle}
-                        >
-                          <option value="STARTS_WITH">STARTS_WITH</option>
-                          <option value="CONTAINS">CONTAINS</option>
-                          <option value="FUZZY">FUZZY</option>
-                        </select>
-                      </div>
-
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#374151' }}>
-                        <input
-                          type="checkbox"
-                          checked={uberSelectConfig.autoComplete?.caseSensitive || false}
-                          onChange={(e) => updateAutoComplete({ caseSensitive: e.target.checked })}
-                        />
-                        Case Sensitive
-                      </label>
                     </div>
 
                     {/* Static Options */}

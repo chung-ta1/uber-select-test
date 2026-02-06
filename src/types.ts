@@ -6,16 +6,7 @@ export interface StringOption {
   mappedData?: Record<string, unknown>;
 }
 
-export interface SearchableSelectedOption {
-  _type?: 'SearchableSelectedOption';
-  label: string;
-  value: string;
-  imageUrl?: string;
-}
-
-export type SelectionMode = 'SINGLE' | 'MULTI';
-
-export type SelectionsDisplayMode = 'ABOVE' | 'BELOW' | 'WITHIN';
+export type SelectionsDisplayPosition = 'ABOVE' | 'BELOW' | 'WITHIN';
 
 export interface QueryParameter {
   name: string;
@@ -26,19 +17,26 @@ export interface RemoteOptions {
   url: string;
   preloadAll?: boolean;
   queryParameters?: QueryParameter[];
-  resultsPath?: string;
-  fields?: Record<string, string>;
+  resultsJsonPath?: string;
 }
 
-export type AutoCompleteMatchMode = 'STARTS_WITH' | 'CONTAINS' | 'FUZZY';
+export interface ResultMapping {
+  labelExpression?: string;
+  imageUrlJsonPath?: string;
+}
 
-export interface AutoCompleteConfig {
+export interface SearchConfig {
   enabled?: boolean;
-  minChars?: number;
-  debounceMillis?: number;
-  noMatchesMessage?: string;
-  caseSensitive?: boolean;
-  localMatchMode?: AutoCompleteMatchMode;
+  minInputLength?: number;
+  debounceDelayMs?: number;
+}
+
+export interface SelectionsDisplay {
+  position?: SelectionsDisplayPosition;
+}
+
+export interface DropdownDisplay {
+  noResultsMessage?: string;
 }
 
 export interface ManualEntryFieldDefinition {
@@ -49,9 +47,14 @@ export interface ManualEntryFieldDefinition {
   placeholder?: string;
 }
 
-export interface ManualEntryConfig {
+export interface ManualEntrySubformConfig {
+  labelExpression?: string;
   fields: ManualEntryFieldDefinition[];
-  [key: string]: string | ManualEntryFieldDefinition[] | undefined;
+}
+
+export interface ManualEntryConfig {
+  triggerText?: string;
+  subformConfig?: ManualEntrySubformConfig;
 }
 
 export interface UberSelectFieldConfig {
@@ -59,14 +62,16 @@ export interface UberSelectFieldConfig {
   required?: boolean;
   placeholder?: string;
   subtitle?: string;
-  selectionMode?: SelectionMode;
   options?: StringOption[];
   remoteOptions?: RemoteOptions;
-  manualEntry?: ManualEntryConfig[];
-  autoComplete?: AutoCompleteConfig;
+  resultMapping?: ResultMapping;
+  answerMapping?: Record<string, string>;
+  searchConfig?: SearchConfig;
   minSelections?: number;
   maxSelections?: number;
-  selectionsDisplayMode?: SelectionsDisplayMode;
+  selectionsDisplay?: SelectionsDisplay;
+  dropdownDisplay?: DropdownDisplay;
+  manualEntryConfig?: ManualEntryConfig;
   selectionsHeader?: string;
   showClearButton?: boolean;
   readOnly?: boolean;
